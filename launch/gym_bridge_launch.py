@@ -22,38 +22,48 @@
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.substitutions import Command
+from launch.substitutions import Command, LaunchConfiguration
+from launch.actions import DeclareLaunchArgument
 from ament_index_python.packages import get_package_share_directory
 import os
 import yaml
 
+
 def generate_launch_description():
     ld = LaunchDescription()
-    config = os.path.join(
-        get_package_share_directory('f1tenth_gym_ros'),
+
+    map_yaml_path = LaunchConfiguration('map_yaml_path')
+    map_yaml_path_arg = DeclareLaunchArgument(
+        'map_yaml_path', description="Path to map YAML file. Passed in via top-level launchfile.")
+
+    sim_setup_params = os.path.join(
+        get_package_share_directory('stack_master'),
         'config',
-        'sim.yaml'
-        )
-    config_dict = yaml.safe_load(open(config, 'r'))
+        'SIM',
+        'sim.yaml')
+
+    config_dict = yaml.safe_load(open(sim_setup_params, 'r'))
     has_opp = config_dict['bridge']['ros__parameters']['num_agent'] > 1
-    teleop = config_dict['bridge']['ros__parameters']['kb_teleop']
 
     bridge_node = Node(
         package='f1tenth_gym_ros',
         executable='gym_bridge',
         name='bridge',
-        parameters=[config]
+        parameters=[sim_setup_params,
+                    {'map_path': map_yaml_path},
+                    {'sim_params': os.path.join(get_package_share_directory('stack_master'), 'config', 'SIM', 'sim_params.yaml')}]
     )
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
         name='rviz',
-        arguments=['-d', os.path.join(get_package_share_directory('f1tenth_gym_ros'), 'launch', 'gym_bridge.rviz')]
+        arguments=[
+            '-d', os.path.join(get_package_share_directory('stack_master'), 'config', 'SIM', 'sim.rviz')]
     )
     map_server_node = Node(
         package='nav2_map_server',
         executable='map_server',
-        parameters=[{'yaml_filename': config_dict['bridge']['ros__parameters']['map_path'] + '.yaml'},
+        parameters=[{'yaml_filename': map_yaml_path},
                     {'topic': 'map'},
                     {'frame_id': 'map'},
                     {'output': 'screen'},
@@ -72,18 +82,22 @@ def generate_launch_description():
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='ego_robot_state_publisher',
-        parameters=[{'robot_description': Command(['xacro ', os.path.join(get_package_share_directory('f1tenth_gym_ros'), 'launch', 'ego_racecar.xacro')])}],
+        parameters=[{'robot_description': Command(['xacro ', os.path.join(
+            get_package_share_directory('f1tenth_gym_ros'), 'config', 'ego_racecar.xacro')])}],
         remappings=[('/robot_description', 'ego_robot_description')]
     )
     opp_robot_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='opp_robot_state_publisher',
-        parameters=[{'robot_description': Command(['xacro ', os.path.join(get_package_share_directory('f1tenth_gym_ros'), 'launch', 'opp_racecar.xacro')])}],
+        parameters=[{'robot_description': Command(['xacro ', os.path.join(
+            get_package_share_directory('f1tenth_gym_ros'), 'config', 'opp_racecar.xacro')])}],
         remappings=[('/robot_description', 'opp_robot_description')]
     )
+    # TODO: add IMU
 
     # finalize
+    ld.add_action(map_yaml_path_arg)
     ld.add_action(rviz_node)
     ld.add_action(bridge_node)
     ld.add_action(nav_lifecycle_node)

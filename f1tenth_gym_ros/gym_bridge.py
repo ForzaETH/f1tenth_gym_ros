@@ -20,8 +20,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import yaml
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.msg import ParameterDescriptor
+from rclpy.parameter import ParameterType
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import ReentrantCallbackGroup
 
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
@@ -30,41 +35,77 @@ from geometry_msgs.msg import PoseWithCovarianceStamped
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Transform
-from geometry_msgs.msg import Quaternion
 from ackermann_msgs.msg import AckermannDriveStamped
 from tf2_ros import TransformBroadcaster
 
-import gym
+import gymnasium as gym
 import numpy as np
 from transforms3d import euler
+import os.path
+
 
 class GymBridge(Node):
     def __init__(self):
-        super().__init__('gym_bridge')
+        super().__init__('gym_bridge',
+                         automatically_declare_parameters_from_overrides=True)
 
-        self.declare_parameter('ego_namespace')
-        self.declare_parameter('ego_odom_topic')
-        self.declare_parameter('ego_opp_odom_topic')
-        self.declare_parameter('ego_scan_topic')
-        self.declare_parameter('ego_drive_topic')
-        self.declare_parameter('opp_namespace')
-        self.declare_parameter('opp_odom_topic')
-        self.declare_parameter('opp_ego_odom_topic')
-        self.declare_parameter('opp_scan_topic')
-        self.declare_parameter('opp_drive_topic')
-        self.declare_parameter('scan_distance_to_base_link')
-        self.declare_parameter('scan_fov')
-        self.declare_parameter('scan_beams')
-        self.declare_parameter('map_path')
-        self.declare_parameter('map_img_ext')
-        self.declare_parameter('num_agent')
-        self.declare_parameter('sx')
-        self.declare_parameter('sy')
-        self.declare_parameter('stheta')
-        self.declare_parameter('sx1')
-        self.declare_parameter('sy1')
-        self.declare_parameter('stheta1')
-        self.declare_parameter('kb_teleop')
+        self.set_descriptor(name='ego_namespace', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='ego_odom_topic', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='ego_pose_topic', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='ego_opp_odom_topic', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='ego_scan_topic', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='ego_drive_topic', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='opp_namespace', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='opp_odom_topic', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='opp_ego_odom_topic', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='opp_scan_topic', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='opp_drive_topic', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+
+        self.set_descriptor(name='scan_distance_to_base_link', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_DOUBLE, description="Transforms related"))
+        self.set_descriptor(name='scan_fov', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_DOUBLE, description="laserscan related"))
+        self.set_descriptor(name='scan_beams', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_INTEGER, description="laserscan related"))
+
+        self.set_descriptor(name='map_path', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+        self.set_descriptor(name='map_img_ext', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING))
+
+        self.set_descriptor(name='num_agent', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_INTEGER))
+
+        self.set_descriptor(name='sim_params', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_STRING, description="The path to the sim_params yaml file"))
+
+        self.set_descriptor(name='sx', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_DOUBLE, description="Starting X position of ego"))
+        self.set_descriptor(name='sy', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_DOUBLE, description="Starting Y position of ego"))
+        self.set_descriptor(name='stheta', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_DOUBLE, description="Starting heading of ego"))
+
+        self.set_descriptor(name='sx1', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_DOUBLE, description="Starting X position of opponent"))
+        self.set_descriptor(name='sy1', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_DOUBLE, description="Starting Y position of opponent"))
+        self.set_descriptor(name='stheta1', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_DOUBLE, description="Starting heading of opponent"))
+
+        self.set_descriptor(name='kb_teleop', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_BOOL, description="Whether teleop is enabled"))
 
         # check num_agents
         num_agents = self.get_parameter('num_agent').value
@@ -73,11 +114,20 @@ class GymBridge(Node):
         elif type(num_agents) != int:
             raise ValueError('num_agents should be an int.')
 
+        # get sim params
+        sim_params_yaml = self.get_parameter('sim_params').value
+        sim_param_data = yaml.safe_load(open(sim_params_yaml, 'r'))
+        sim_params = {key: float(value)
+                      for key, value in sim_param_data.items()}
+
         # env backend
+        map_yaml_path = os.path.abspath(self.get_parameter('map_path').value)
         self.env = gym.make('f110_gym:f110-v0',
-                            map=self.get_parameter('map_path').value,
+                            map=map_yaml_path.split('.')[0],
                             map_ext=self.get_parameter('map_img_ext').value,
-                            num_agents=num_agents)
+                            params=sim_params,
+                            num_agents=num_agents,
+                            disable_env_checker=True)
 
         sx = self.get_parameter('sx').value
         sy = self.get_parameter('sy').value
@@ -95,9 +145,14 @@ class GymBridge(Node):
         self.angle_max = scan_fov / 2.
         self.angle_inc = scan_fov / scan_beams
         self.ego_namespace = self.get_parameter('ego_namespace').value
-        ego_odom_topic = self.ego_namespace + '/' + self.get_parameter('ego_odom_topic').value
-        self.scan_distance_to_base_link = self.get_parameter('scan_distance_to_base_link').value
-        
+        ego_odom_topic = self.ego_namespace + '/' + \
+            self.get_parameter('ego_odom_topic').value
+        ego_pose_topic = self.ego_namespace + '/' + \
+            self.get_parameter('ego_pose_topic').value
+        self.scan_distance_to_base_link = self.get_parameter(
+            'scan_distance_to_base_link').value
+        self.ts = self.get_clock().now().to_msg()
+
         if num_agents == 2:
             self.has_opp = True
             self.opp_namespace = self.get_parameter('opp_namespace').value
@@ -109,38 +164,50 @@ class GymBridge(Node):
             self.opp_requested_speed = 0.0
             self.opp_steer = 0.0
             self.opp_collision = False
-            self.obs, _ , self.done, _ = self.env.reset(np.array([[sx, sy, stheta], [sx1, sy1, stheta1]]))
+            self.obs, _, self.done, _ = self.env.reset(
+                poses=np.array([[sx, sy, stheta], [sx1, sy1, stheta1]]))
             self.ego_scan = list(self.obs['scans'][0])
             self.opp_scan = list(self.obs['scans'][1])
 
             opp_scan_topic = self.get_parameter('opp_scan_topic').value
-            opp_odom_topic = self.opp_namespace + '/' + self.get_parameter('opp_odom_topic').value
+            opp_odom_topic = self.opp_namespace + '/' + \
+                self.get_parameter('opp_odom_topic').value
             opp_drive_topic = self.get_parameter('opp_drive_topic').value
 
-            ego_opp_odom_topic = self.ego_namespace + '/' + self.get_parameter('ego_opp_odom_topic').value
-            opp_ego_odom_topic = self.opp_namespace + '/' + self.get_parameter('opp_ego_odom_topic').value
+            ego_opp_odom_topic = self.ego_namespace + '/' + \
+                self.get_parameter('ego_opp_odom_topic').value
+            opp_ego_odom_topic = self.opp_namespace + '/' + \
+                self.get_parameter('opp_ego_odom_topic').value
         else:
             self.has_opp = False
-            self.obs, _ , self.done, _ = self.env.reset(np.array([[sx, sy, stheta]]))
+            self.obs, _, self.done, _ = self.env.reset(
+                poses=np.array([[sx, sy, stheta]]))
             self.ego_scan = list(self.obs['scans'][0])
 
         # sim physical step timer
-        self.drive_timer = self.create_timer(0.01, self.drive_timer_callback)
+        cb_group1= ReentrantCallbackGroup()
+        self.drive_timer = self.create_timer(0.01, self.drive_timer_callback, callback_group=cb_group1)
         # topic publishing timer
-        self.timer = self.create_timer(0.004, self.timer_callback)
+        self.timer = self.create_timer(0.01, self.timer_callback, callback_group=cb_group1)
 
         # transform broadcaster
         self.br = TransformBroadcaster(self)
 
         # publishers
-        self.ego_scan_pub = self.create_publisher(LaserScan, ego_scan_topic, 10)
+        self.ego_scan_pub = self.create_publisher(
+            LaserScan, ego_scan_topic, 10)
         self.ego_odom_pub = self.create_publisher(Odometry, ego_odom_topic, 10)
+        self.ego_pose_pub = self.create_publisher(PoseStamped, ego_pose_topic, 10)
         self.ego_drive_published = False
         if num_agents == 2:
-            self.opp_scan_pub = self.create_publisher(LaserScan, opp_scan_topic, 10)
-            self.ego_opp_odom_pub = self.create_publisher(Odometry, ego_opp_odom_topic, 10)
-            self.opp_odom_pub = self.create_publisher(Odometry, opp_odom_topic, 10)
-            self.opp_ego_odom_pub = self.create_publisher(Odometry, opp_ego_odom_topic, 10)
+            self.opp_scan_pub = self.create_publisher(
+                LaserScan, opp_scan_topic, 10)
+            self.ego_opp_odom_pub = self.create_publisher(
+                Odometry, ego_opp_odom_topic, 10)
+            self.opp_odom_pub = self.create_publisher(
+                Odometry, opp_odom_topic, 10)
+            self.opp_ego_odom_pub = self.create_publisher(
+                Odometry, opp_ego_odom_topic, 10)
             self.opp_drive_published = False
 
         # subscribers
@@ -173,7 +240,6 @@ class GymBridge(Node):
                 self.teleop_callback,
                 10)
 
-
     def drive_callback(self, drive_msg):
         self.ego_requested_speed = drive_msg.drive.speed
         self.ego_steer = drive_msg.drive.steering_angle
@@ -193,10 +259,13 @@ class GymBridge(Node):
         rqw = pose_msg.pose.pose.orientation.w
         _, _, rtheta = euler.quat2euler([rqw, rqx, rqy, rqz], axes='sxyz')
         if self.has_opp:
-            opp_pose = [self.obs['poses_x'][1], self.obs['poses_y'][1], self.obs['poses_theta'][1]]
-            self.obs, _ , self.done, _ = self.env.reset(np.array([[rx, ry, rtheta], opp_pose]))
+            opp_pose = [self.obs['poses_x'][1], self.obs['poses_y']
+                        [1], self.obs['poses_theta'][1]]
+            self.obs, _, self.done, _ = self.env.reset(
+                poses=np.array([[rx, ry, rtheta], opp_pose]))
         else:
-            self.obs, _ , self.done, _ = self.env.reset(np.array([[rx, ry, rtheta]]))
+            self.obs, _, self.done, _ = self.env.reset(
+                poses=np.array([[rx, ry, rtheta]]))
 
     def opp_reset_callback(self, pose_msg):
         if self.has_opp:
@@ -207,7 +276,9 @@ class GymBridge(Node):
             rqz = pose_msg.pose.orientation.z
             rqw = pose_msg.pose.orientation.w
             _, _, rtheta = euler.quat2euler([rqw, rqx, rqy, rqz], axes='sxyz')
-            self.obs, _ , self.done, _ = self.env.reset(np.array([list(self.ego_pose), [rx, ry, rtheta]]))
+            self.obs, _, self.done, _ = self.env.reset(
+                poses=np.array([list(self.ego_pose), [rx, ry, rtheta]]))
+
     def teleop_callback(self, twist_msg):
         if not self.ego_drive_published:
             self.ego_drive_published = True
@@ -223,17 +294,18 @@ class GymBridge(Node):
 
     def drive_timer_callback(self):
         if self.ego_drive_published and not self.has_opp:
-            self.obs, _, self.done, _ = self.env.step(np.array([[self.ego_steer, self.ego_requested_speed]]))
+            self.obs, _, self.done, _ = self.env.step(
+                np.array([[self.ego_steer, self.ego_requested_speed]]))
         elif self.ego_drive_published and self.has_opp and self.opp_drive_published:
-            self.obs, _, self.done, _ = self.env.step(np.array([[self.ego_steer, self.ego_requested_speed], [self.opp_steer, self.opp_requested_speed]]))
+            self.obs, _, self.done, _ = self.env.step(np.array(
+                [[self.ego_steer, self.ego_requested_speed], [self.opp_steer, self.opp_requested_speed]]))
+        self.ts = self.get_clock().now().to_msg()
         self._update_sim_state()
 
     def timer_callback(self):
-        ts = self.get_clock().now().to_msg()
-
         # pub scans
         scan = LaserScan()
-        scan.header.stamp = ts
+        scan.header.stamp = self.ts
         scan.header.frame_id = self.ego_namespace + '/laser'
         scan.angle_min = self.angle_min
         scan.angle_max = self.angle_max
@@ -245,7 +317,7 @@ class GymBridge(Node):
 
         if self.has_opp:
             opp_scan = LaserScan()
-            opp_scan.header.stamp = ts
+            opp_scan.header.stamp = self.ts
             opp_scan.header.frame_id = self.opp_namespace + '/laser'
             opp_scan.angle_min = self.angle_min
             opp_scan.angle_max = self.angle_max
@@ -256,10 +328,9 @@ class GymBridge(Node):
             self.opp_scan_pub.publish(opp_scan)
 
         # pub tf
-        self._publish_odom(ts)
-        self._publish_transforms(ts)
-        self._publish_laser_transforms(ts)
-        self._publish_wheel_transforms(ts)
+        self._publish_odom(self.ts)
+        self._publish_transforms(self.ts)
+        self._publish_wheel_transforms(self.ts)
 
     def _update_sim_state(self):
         self.ego_scan = list(self.obs['scans'][0])
@@ -279,8 +350,6 @@ class GymBridge(Node):
         self.ego_speed[1] = self.obs['linear_vels_y'][0]
         self.ego_speed[2] = self.obs['ang_vels_z'][0]
 
-        
-
     def _publish_odom(self, ts):
         ego_odom = Odometry()
         ego_odom.header.stamp = ts
@@ -297,6 +366,12 @@ class GymBridge(Node):
         ego_odom.twist.twist.linear.y = self.ego_speed[1]
         ego_odom.twist.twist.angular.z = self.ego_speed[2]
         self.ego_odom_pub.publish(ego_odom)
+        
+        # publish pose
+        pose_msg = PoseStamped()
+        pose_msg.header = ego_odom.header
+        pose_msg.pose = ego_odom.pose.pose
+        self.ego_pose_pub.publish(pose_msg)
 
         if self.has_opp:
             opp_odom = Odometry()
@@ -340,7 +415,8 @@ class GymBridge(Node):
             opp_t.translation.x = self.opp_pose[0]
             opp_t.translation.y = self.opp_pose[1]
             opp_t.translation.z = 0.0
-            opp_quat = euler.euler2quat(0.0, 0.0, self.opp_pose[2], axes='sxyz')
+            opp_quat = euler.euler2quat(
+                0.0, 0.0, self.opp_pose[2], axes='sxyz')
             opp_t.rotation.x = opp_quat[1]
             opp_t.rotation.y = opp_quat[2]
             opp_t.rotation.z = opp_quat[3]
@@ -370,7 +446,8 @@ class GymBridge(Node):
 
         if self.has_opp:
             opp_wheel_ts = TransformStamped()
-            opp_wheel_quat = euler.euler2quat(0., 0., self.opp_steer, axes='sxyz')
+            opp_wheel_quat = euler.euler2quat(
+                0., 0., self.opp_steer, axes='sxyz')
             opp_wheel_ts.transform.rotation.x = opp_wheel_quat[1]
             opp_wheel_ts.transform.rotation.y = opp_wheel_quat[2]
             opp_wheel_ts.transform.rotation.z = opp_wheel_quat[3]
@@ -383,29 +460,23 @@ class GymBridge(Node):
             opp_wheel_ts.child_frame_id = self.opp_namespace + '/front_right_wheel'
             self.br.sendTransform(opp_wheel_ts)
 
-    def _publish_laser_transforms(self, ts):
-        ego_scan_ts = TransformStamped()
-        ego_scan_ts.transform.translation.x = self.scan_distance_to_base_link
-        # ego_scan_ts.transform.translation.z = 0.04+0.1+0.025
-        ego_scan_ts.transform.rotation.w = 1.
-        ego_scan_ts.header.stamp = ts
-        ego_scan_ts.header.frame_id = self.ego_namespace + '/base_link'
-        ego_scan_ts.child_frame_id = self.ego_namespace + '/laser'
-        self.br.sendTransform(ego_scan_ts)
-
-        if self.has_opp:
-            opp_scan_ts = TransformStamped()
-            opp_scan_ts.transform.translation.x = self.scan_distance_to_base_link
-            opp_scan_ts.transform.rotation.w = 1.
-            opp_scan_ts.header.stamp = ts
-            opp_scan_ts.header.frame_id = self.opp_namespace + '/base_link'
-            opp_scan_ts.child_frame_id = self.opp_namespace + '/laser'
-            self.br.sendTransform(opp_scan_ts)
 
 def main(args=None):
     rclpy.init(args=args)
     gym_bridge = GymBridge()
-    rclpy.spin(gym_bridge)
+    
+    executor = MultiThreadedExecutor()
+    executor.add_node(gym_bridge)
+
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        gym_bridge.get_logger().info('Exiting gym_bridge')
+    
+
+    gym_bridge.destroy_node()
+    rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
