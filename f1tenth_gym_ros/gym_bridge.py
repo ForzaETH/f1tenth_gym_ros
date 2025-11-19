@@ -27,6 +27,7 @@ from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.parameter import ParameterType
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
@@ -210,6 +211,12 @@ class GymBridge(Node):
                 Odometry, opp_ego_odom_topic, 10)
             self.opp_drive_published = False
 
+        # QoS Profiles
+        best_effort_qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=10)
+
         # subscribers
         self.ego_drive_sub = self.create_subscription(
             AckermannDriveStamped,
@@ -220,7 +227,7 @@ class GymBridge(Node):
             PoseWithCovarianceStamped,
             '/initialpose',
             self.ego_reset_callback,
-            10)
+            qos_profile=best_effort_qos_profile)
         if num_agents == 2:
             self.opp_drive_sub = self.create_subscription(
                 AckermannDriveStamped,
