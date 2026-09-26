@@ -23,7 +23,9 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.substitutions import Command, LaunchConfiguration
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, RegisterEventHandler
+from launch.event_handlers import OnProcessStart
+import launch.logging
 from ament_index_python.packages import get_package_share_directory
 import os
 import yaml
@@ -58,15 +60,24 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz',
         arguments=[
-            '-d', os.path.join(get_package_share_directory('stack_master'), 'config', 'SIM', 'sim.rviz')]
+            '-d', os.path.join(get_package_share_directory('stack_master'), 'config', 'SIM', 'sim.rviz'),
+            '--ros-args', '--log-level', 'warn']
     )
+    # Warn when rviz starts; Humble's launch has no LogWarn action
+    rviz_glsl_note = RegisterEventHandler(OnProcessStart(
+        target_action=rviz_node,
+        on_start=[OpaqueFunction(function=lambda context: launch.logging.get_logger('launch.user').warning(
+            "rviz2 may log a GLSL error for indexed_8bit_image ('active samplers with a different "
+            "type refer to the same texture image unit'). This is a known, unsolved rviz2 bug and "
+            "is harmless. See https://github.com/ros2/rviz/issues/463"))]))
     map_server_node = Node(
         package='nav2_map_server',
         executable='map_server',
+        output='screen',
+        arguments=['--ros-args', '--log-level', 'warn'],
         parameters=[{'yaml_filename': map_yaml_path},
                     {'topic': 'map'},
                     {'frame_id': 'map'},
-                    {'output': 'screen'},
                     {'use_sim_time': True}]
     )
     nav_lifecycle_node = Node(
@@ -74,6 +85,7 @@ def generate_launch_description():
         executable='lifecycle_manager',
         name='lifecycle_manager_localization',
         output='screen',
+        arguments=['--ros-args', '--log-level', 'warn'],
         parameters=[{'use_sim_time': True},
                     {'autostart': True},
                     {'node_names': ['map_server']}]
@@ -82,6 +94,7 @@ def generate_launch_description():
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='ego_robot_state_publisher',
+        arguments=['--ros-args', '--log-level', 'warn'], # Log only errors and warning
         parameters=[{'robot_description': Command(['xacro ', os.path.join(
             get_package_share_directory('f1tenth_gym_ros'), 'config', 'ego_racecar.xacro')])}],
         remappings=[('/robot_description', 'ego_robot_description')]
@@ -90,6 +103,7 @@ def generate_launch_description():
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='opp_robot_state_publisher',
+        arguments=['--ros-args', '--log-level', 'warn'], # Log only errors and warning
         parameters=[{'robot_description': Command(['xacro ', os.path.join(
             get_package_share_directory('f1tenth_gym_ros'), 'config', 'opp_racecar.xacro')])}],
         remappings=[('/robot_description', 'opp_robot_description')]
@@ -99,6 +113,7 @@ def generate_launch_description():
     # finalize
     ld.add_action(map_yaml_path_arg)
     ld.add_action(rviz_node)
+    ld.add_action(rviz_glsl_note)
     ld.add_action(bridge_node)
     ld.add_action(nav_lifecycle_node)
     ld.add_action(map_server_node)
