@@ -24,6 +24,7 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.substitutions import Command, LaunchConfiguration
 from launch.actions import DeclareLaunchArgument, OpaqueFunction, RegisterEventHandler
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessStart
 import launch.logging
 from ament_index_python.packages import get_package_share_directory
@@ -37,6 +38,9 @@ def generate_launch_description():
     map_yaml_path = LaunchConfiguration('map_yaml_path')
     map_yaml_path_arg = DeclareLaunchArgument(
         'map_yaml_path', description="Path to map YAML file. Passed in via top-level launchfile.")
+    rviz = LaunchConfiguration('rviz')
+    rviz_arg = DeclareLaunchArgument(
+        'rviz', default_value='true', description="RViz")
 
     sim_setup_params = os.path.join(
         get_package_share_directory('stack_master'),
@@ -59,6 +63,7 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz',
+        condition=IfCondition(rviz),
         arguments=[
             '-d', os.path.join(get_package_share_directory('stack_master'), 'config', 'SIM', 'sim.rviz'),
             '--ros-args', '--log-level', 'warn']
@@ -111,6 +116,7 @@ def generate_launch_description():
 
     # finalize
     ld.add_action(map_yaml_path_arg)
+    ld.add_action(rviz_arg)
     ld.add_action(rviz_node)
     ld.add_action(rviz_glsl_note)
     ld.add_action(bridge_node)
