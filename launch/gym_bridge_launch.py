@@ -63,13 +63,12 @@ def generate_launch_description():
             '-d', os.path.join(get_package_share_directory('stack_master'), 'config', 'SIM', 'sim.rviz'),
             '--ros-args', '--log-level', 'warn']
     )
-    # Warn when rviz starts; Humble's launch has no LogWarn action
     rviz_glsl_note = RegisterEventHandler(OnProcessStart(
         target_action=rviz_node,
         on_start=[OpaqueFunction(function=lambda context: launch.logging.get_logger('launch.user').warning(
-            "rviz2 may log a GLSL error for indexed_8bit_image ('active samplers with a different "
+            "\033[33mrviz2 may log a GLSL error for indexed_8bit_image ('active samplers with a different "
             "type refer to the same texture image unit'). This is a known, unsolved rviz2 bug and "
-            "is harmless. See https://github.com/ros2/rviz/issues/463"))]))
+            "is harmless. See https://github.com/ros2/rviz/issues/463\033[0m"))]))
     map_server_node = Node(
         package='nav2_map_server',
         executable='map_server',
