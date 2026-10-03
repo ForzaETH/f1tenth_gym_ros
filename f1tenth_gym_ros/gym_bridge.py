@@ -79,6 +79,8 @@ class GymBridge(Node):
             type=ParameterType.PARAMETER_DOUBLE, description="laserscan related"))
         self.set_descriptor(name='scan_beams', descriptor=ParameterDescriptor(
             type=ParameterType.PARAMETER_INTEGER, description="laserscan related"))
+        self.set_descriptor(name='scan_rate_hz', descriptor=ParameterDescriptor(
+            type=ParameterType.PARAMETER_DOUBLE, description="laserscan publishing rate"))
 
         self.set_descriptor(name='map_path', descriptor=ParameterDescriptor(
             type=ParameterType.PARAMETER_STRING))
@@ -188,8 +190,10 @@ class GymBridge(Node):
         # sim physical step timer
         cb_group1= ReentrantCallbackGroup()
         self.drive_timer = self.create_timer(0.01, self.drive_timer_callback, callback_group=cb_group1)
-        # topic publishing timer
+        # topic publishing timers: odom/tf at the sim step rate, scans at the lidar rate
         self.timer = self.create_timer(0.01, self.timer_callback, callback_group=cb_group1)
+        self.scan_timer = self.create_timer(
+            1.0 / self.get_parameter('scan_rate_hz').value, self.scan_timer_callback, callback_group=cb_group1)
 
         # transform broadcaster
         self.br = TransformBroadcaster(self)
@@ -309,7 +313,7 @@ class GymBridge(Node):
         self.ts = self.get_clock().now().to_msg()
         self._update_sim_state()
 
-    def timer_callback(self):
+    def scan_timer_callback(self):
         # pub scans
         scan = LaserScan()
         scan.header.stamp = self.ts
@@ -334,6 +338,7 @@ class GymBridge(Node):
             opp_scan.ranges = self.opp_scan
             self.opp_scan_pub.publish(opp_scan)
 
+    def timer_callback(self):
         # pub tf
         self._publish_odom(self.ts)
         self._publish_transforms(self.ts)
