@@ -112,6 +112,14 @@ def generate_launch_description():
             get_package_share_directory('f1tenth_gym_ros'), 'config', 'opp_racecar.xacro')])}],
         remappings=[('/robot_description', 'opp_robot_description')]
     )
+    
+    map_to_odom_broadcaster = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='map_to_odom_broadcaster',
+        arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom']
+    )
+    
     # TODO: add IMU
 
     # finalize
@@ -122,6 +130,7 @@ def generate_launch_description():
     ld.add_action(bridge_node)
     ld.add_action(nav_lifecycle_node)
     ld.add_action(map_server_node)
+    ld.add_action(map_to_odom_broadcaster)
     ld.add_action(ego_robot_publisher)
     if has_opp:
         ld.add_action(opp_robot_publisher)
