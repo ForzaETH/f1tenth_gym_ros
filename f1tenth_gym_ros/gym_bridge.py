@@ -181,6 +181,8 @@ class GymBridge(Node):
                 self.get_parameter('ego_opp_odom_topic').value
             opp_ego_odom_topic = self.opp_namespace + '/' + \
                 self.get_parameter('opp_ego_odom_topic').value
+            opp_pose_topic = self.opp_namespace + '/' + \
+                self.get_parameter('ego_pose_topic').value
         else:
             self.has_opp = False
             self.obs, _, self.done, _ = self.env.reset(
@@ -213,7 +215,8 @@ class GymBridge(Node):
                 Odometry, opp_odom_topic, 10)
             self.opp_ego_odom_pub = self.create_publisher(
                 Odometry, opp_ego_odom_topic, 10)
-            self.opp_drive_published = False
+            self.opp_pose_pub = self.create_publisher(
+                PoseStamped, opp_pose_topic, 10)
 
         # QoS Profiles
         best_effort_qos_profile = QoSProfile(
@@ -259,7 +262,6 @@ class GymBridge(Node):
     def opp_drive_callback(self, drive_msg):
         self.opp_requested_speed = drive_msg.drive.speed
         self.opp_steer = drive_msg.drive.steering_angle
-        self.opp_drive_published = True
 
     def ego_reset_callback(self, pose_msg):
         rx = pose_msg.pose.pose.position.x
@@ -307,7 +309,8 @@ class GymBridge(Node):
         if self.ego_drive_published and not self.has_opp:
             self.obs, _, self.done, _ = self.env.step(
                 np.array([[self.ego_steer, self.ego_requested_speed]]))
-        elif self.ego_drive_published and self.has_opp and self.opp_drive_published:
+        # opp keeps its 0, 0 default command until it publishes, so the ego is simulated anyway
+        elif self.ego_drive_published and self.has_opp:
             self.obs, _, self.done, _ = self.env.step(np.array(
                 [[self.ego_steer, self.ego_requested_speed], [self.opp_steer, self.opp_requested_speed]]))
         self.ts = self.get_clock().now().to_msg()
@@ -378,7 +381,7 @@ class GymBridge(Node):
         ego_odom.twist.twist.linear.y = self.ego_speed[1]
         ego_odom.twist.twist.angular.z = self.ego_speed[2]
         self.ego_odom_pub.publish(ego_odom)
-        
+
         # publish pose
         pose_msg = PoseStamped()
         pose_msg.header = ego_odom.header
@@ -401,6 +404,10 @@ class GymBridge(Node):
             opp_odom.twist.twist.linear.y = self.opp_speed[1]
             opp_odom.twist.twist.angular.z = self.opp_speed[2]
             self.opp_odom_pub.publish(opp_odom)
+            opp_pose_msg = PoseStamped()
+            opp_pose_msg.header = opp_odom.header
+            opp_pose_msg.pose = opp_odom.pose.pose
+            self.opp_pose_pub.publish(opp_pose_msg)
             self.opp_ego_odom_pub.publish(ego_odom)
             self.ego_opp_odom_pub.publish(opp_odom)
 
@@ -476,7 +483,7 @@ class GymBridge(Node):
 def main(args=None):
     rclpy.init(args=args)
     gym_bridge = GymBridge()
-    
+
     executor = MultiThreadedExecutor()
     executor.add_node(gym_bridge)
 
@@ -484,7 +491,7 @@ def main(args=None):
         executor.spin()
     except KeyboardInterrupt:
         gym_bridge.get_logger().info('Exiting gym_bridge')
-    
+
 
     gym_bridge.destroy_node()
     rclpy.shutdown()
