@@ -148,8 +148,9 @@ class GymBridge(Node):
         self.angle_max = scan_fov / 2.
         self.angle_inc = scan_fov / scan_beams
         self.ego_namespace = self.get_parameter('ego_namespace').value
-        ego_odom_topic = self.ego_namespace + '/' + \
-            self.get_parameter('ego_odom_topic').value
+        ego_odom_topic = self.get_parameter('ego_odom_topic').value
+        if not ego_odom_topic.startswith('/'):  # relative names live in the ego namespace
+            ego_odom_topic = self.ego_namespace + '/' + ego_odom_topic
         ego_pose_topic = self.ego_namespace + '/' + \
             self.get_parameter('ego_pose_topic').value
         self.scan_distance_to_base_link = self.get_parameter(
