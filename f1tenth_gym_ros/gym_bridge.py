@@ -293,9 +293,13 @@ class GymBridge(Node):
         self.spawned_on_raceline = True  # only once, later raceline updates must not teleport the car
         w = wpnts_msg.wpnts[0]
         if self.has_opp:
-            opp_pose = [self.obs['poses_x'][1], self.obs['poses_y'][1], self.obs['poses_theta'][1]]
+            # opponent on the raceline too, opp_spawn_s [m] ahead of the ego (sx1/sy1/stheta1 are only the fallback)
+            opp_s = (self.get_parameter('opp_spawn_s').value if self.has_parameter('opp_spawn_s') else 5.0) \
+                % wpnts_msg.wpnts[-1].s_m
+            o = min(wpnts_msg.wpnts, key=lambda p: abs(p.s_m - opp_s))
             self.obs, _, self.done, _ = self.env.reset(
-                poses=np.array([[w.x_m, w.y_m, w.psi_rad], opp_pose]))
+                poses=np.array([[w.x_m, w.y_m, w.psi_rad], [o.x_m, o.y_m, o.psi_rad]]))
+            self.get_logger().info(f"Spawned opp on raceline s={o.s_m:.2f}: x={o.x_m:.2f} y={o.y_m:.2f} yaw={o.psi_rad:.2f}")
         else:
             self.obs, _, self.done, _ = self.env.reset(
                 poses=np.array([[w.x_m, w.y_m, w.psi_rad]]))
