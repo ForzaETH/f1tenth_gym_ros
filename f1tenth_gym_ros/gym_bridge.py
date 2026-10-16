@@ -37,6 +37,8 @@ from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Transform
 from ackermann_msgs.msg import AckermannDriveStamped
+from f110_msgs.msg import WpntArray
+from stack_master.qos import LATCHED_QOS
 from tf2_ros import TransformBroadcaster
 
 import gymnasium as gym
@@ -236,6 +238,10 @@ class GymBridge(Node):
             '/initialpose',
             self.ego_reset_callback,
             qos_profile=best_effort_qos_profile)
+        # spawn the ego at s=0 of the raceline, aligned with it (sx/sy/stheta are only the fallback)
+        self.spawned_on_raceline = False
+        self.raceline_sub = self.create_subscription(
+            WpntArray, '/global_waypoints', self.raceline_spawn_callback, LATCHED_QOS)
         if num_agents == 2:
             self.opp_drive_sub = self.create_subscription(
                 AckermannDriveStamped,
@@ -280,6 +286,20 @@ class GymBridge(Node):
         else:
             self.obs, _, self.done, _ = self.env.reset(
                 poses=np.array([[rx, ry, rtheta]]))
+
+    def raceline_spawn_callback(self, wpnts_msg):
+        if self.spawned_on_raceline or not wpnts_msg.wpnts:
+            return
+        self.spawned_on_raceline = True  # only once, later raceline updates must not teleport the car
+        w = wpnts_msg.wpnts[0]
+        if self.has_opp:
+            opp_pose = [self.obs['poses_x'][1], self.obs['poses_y'][1], self.obs['poses_theta'][1]]
+            self.obs, _, self.done, _ = self.env.reset(
+                poses=np.array([[w.x_m, w.y_m, w.psi_rad], opp_pose]))
+        else:
+            self.obs, _, self.done, _ = self.env.reset(
+                poses=np.array([[w.x_m, w.y_m, w.psi_rad]]))
+        self.get_logger().info(f"Spawned ego on raceline s=0: x={w.x_m:.2f} y={w.y_m:.2f} yaw={w.psi_rad:.2f}")
 
     def opp_reset_callback(self, pose_msg):
         if self.has_opp:
