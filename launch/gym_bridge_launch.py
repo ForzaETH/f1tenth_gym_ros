@@ -117,7 +117,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='map_to_odom_broadcaster',
-        arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom']
+        arguments=['--frame-id', 'map', '--child-frame-id', 'odom', '--ros-args', '--log-level', 'warn']
     )
     
     # TODO: add IMU
