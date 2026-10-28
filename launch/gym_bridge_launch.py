@@ -22,6 +22,7 @@
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch.substitutions import Command, LaunchConfiguration
 from launch.actions import DeclareLaunchArgument, OpaqueFunction, RegisterEventHandler
 from launch.conditions import IfCondition
@@ -141,8 +142,8 @@ def generate_launch_description():
         executable='robot_state_publisher',
         name='ego_robot_state_publisher',
         arguments=['--ros-args', '--log-level', 'warn'], # Log only errors and warning
-        parameters=[{'robot_description': Command(['xacro ', os.path.join(
-            get_package_share_directory('f1tenth_gym_ros'), 'config', 'ego_racecar.xacro')])}],
+        parameters=[{'robot_description': ParameterValue(Command(['xacro ', os.path.join(
+            get_package_share_directory('f1tenth_gym_ros'), 'config', 'ego_racecar.xacro')]), value_type=str)}],
         remappings=[('/robot_description', 'ego_robot_description')]
     )
     opp_robot_publisher = Node(
@@ -150,8 +151,8 @@ def generate_launch_description():
         executable='robot_state_publisher',
         name='opp_robot_state_publisher',
         arguments=['--ros-args', '--log-level', 'warn'], # Log only errors and warning
-        parameters=[{'robot_description': Command(['xacro ', os.path.join(
-            get_package_share_directory('f1tenth_gym_ros'), 'config', 'opp_racecar.xacro')])}],
+        parameters=[{'robot_description': ParameterValue(Command(['xacro ', os.path.join(
+            get_package_share_directory('f1tenth_gym_ros'), 'config', 'opp_racecar.xacro')]), value_type=str)}],
         remappings=[('/robot_description', 'opp_robot_description')]
     )
 
