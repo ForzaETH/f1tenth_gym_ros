@@ -93,6 +93,13 @@ A rviz window should pop up showing the simulation either on your host system or
 
 You can then run another node by creating another bash session in `tmux`.
 
+# Audio Synth
+A small audio synthetizaion node has been added, to give audio feedback about throttle input and tire slip. It only wokrs for the ego car, and it can be launched with the following:
+```bash
+ros2 run f1tenth_gym_ros sim_audio
+```
+For more infor check the [node](./f1tenth_gym_ros/sim_audio.py).
+
 # Configuring the simulation
 - The configuration file for the simulation is at `f1tenth_gym_ros/config/sim.yaml`.
 - Topic names and namespaces can be configured but is recommended to leave uncahnged.
