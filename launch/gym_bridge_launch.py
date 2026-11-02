@@ -39,12 +39,15 @@ def car_sim_params(racecar_version, floor):
     config_dir = os.path.join(get_package_share_directory('stack_master'), 'config')
     car_path = os.path.join(config_dir, racecar_version, 'car_model.yaml')
     tires_path = os.path.join(config_dir, racecar_version, 'pacejka', floor, 'default.yaml')
+    sim_params_path = os.path.join(config_dir, 'SIM', 'sim_params.yaml')
     if not (os.path.isfile(car_path) and os.path.isfile(tires_path)):
+        if racecar_version == 'SIM':
+            # SIM car without car_model / Pacejka tires: its sim_params are complete on their own
+            return sim_params_path
         launch.logging.get_logger('launch.user').warning(
             f"{racecar_version} has no {car_path} or {tires_path}, simulating the SIM car instead")
         return car_sim_params('SIM', 'dubi')
 
-    sim_params_path = os.path.join(config_dir, 'SIM', 'sim_params.yaml')
     params = yaml.safe_load(open(sim_params_path, 'r'))  # what the car configs do not have (v_switch, length)
     car = yaml.safe_load(open(car_path, 'r'))
     tires = yaml.safe_load(open(tires_path, 'r'))
