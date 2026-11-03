@@ -119,6 +119,8 @@ In **single** agent:
 
 `/map`: The map of the environment
 
+`/sim/collision/walls`: `std_msgs/UInt8MultiArray`, one flag per agent (`[ego]` or `[ego, opp]`), 1 while the car touches the environment. The gym stops a car on wall contact, so the flag stays set while it stands.
+
 A `tf` tree is also maintained.
 
 In **two** agents:
@@ -132,6 +134,10 @@ In addition to the topics available in the single agent scenario, these topics a
 `/opp_racecar/odom`: The opponent agents' odometry
 
 `/opp_racecar/opp_odom`: The ego agent's odometry for the opponent agent's planner
+
+`/sim/collision/cars`: `std_msgs/Bool`, true while the bodies of the two cars overlap. The gym does not stop the cars on contact.
+
+Both collision topics are published once per physics step (every 10 ms).
 
 # Topics subscribed by the simulation
 

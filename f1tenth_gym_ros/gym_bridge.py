@@ -37,6 +37,7 @@ from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Transform
 from ackermann_msgs.msg import AckermannDriveStamped
+from std_msgs.msg import Bool, UInt8MultiArray
 from f110_msgs.msg import WpntArray
 from stack_master.qos import LATCHED_QOS
 from tf2_ros import TransformBroadcaster
@@ -209,6 +210,10 @@ class GymBridge(Node):
         self.ego_odom_pub = self.create_publisher(Odometry, ego_odom_topic, 10)
         self.ego_pose_pub = self.create_publisher(PoseStamped, ego_pose_topic, 10)
         self.ego_drive_published = False
+        # collision flags of the gym, published once per physics tick
+        self.wall_collision_pub = self.create_publisher(UInt8MultiArray, '/sim/collision/walls', 10)
+        if self.has_opp:
+            self.car_collision_pub = self.create_publisher(Bool, '/sim/collision/cars', 10)
         if num_agents == 2:
             self.opp_scan_pub = self.create_publisher(
                 LaserScan, opp_scan_topic, 10)
@@ -340,6 +345,21 @@ class GymBridge(Node):
                 [[self.ego_steer, self.ego_requested_speed], [self.opp_steer, self.opp_requested_speed]]))
         self.ts = self.get_clock().now().to_msg()
         self._update_sim_state()
+        self.publish_collisions()
+
+    def publish_collisions(self):
+        """
+        /sim/collision/cars: the bodies of ego and opponent overlap (the gym's polygon check).
+        /sim/collision/walls: [ego, opp], a car touches the environment. The gym's own flag for this works on the
+        laser scan, which also contains the other car, so it only counts while the bodies do not overlap.
+        The gym stops a car on wall contact (the flag stays set while it stands) but lets overlapping cars drive on.
+        """
+        sim = self.env.unwrapped.sim
+        cars = sim.collision_idx >= 0
+        self.wall_collision_pub.publish(UInt8MultiArray(
+            data=[int(agent.in_collision and not car) for agent, car in zip(sim.agents, cars)]))
+        if self.has_opp:
+            self.car_collision_pub.publish(Bool(data=bool(cars.any())))
 
     def scan_timer_callback(self):
         # pub scans
