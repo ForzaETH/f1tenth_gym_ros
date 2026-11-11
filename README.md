@@ -102,6 +102,7 @@ For more infor check the [node](./f1tenth_gym_ros/sim_audio.py).
 
 # Configuring the simulation
 - The configuration file for the simulation is at `f1tenth_gym_ros/config/sim.yaml`.
+- To change parameters for one launch without editing `sim.yaml`, pass a YAML file with only the changed values as `sim_overrides:=<path>`, in the same `bridge: ros__parameters:` layout. Its values replace those of `sim.yaml`, including `num_agent`.
 - Topic names and namespaces can be configured but is recommended to leave uncahnged.
 - The map can be changed via the `map_path` parameter. You'll have to use the full path to the map file in the container. The map follows the ROS convention. It is assumed that the image file and the `yaml` file for the map are in the same directory with the same name. See the note below about mounting a volume to see where to put your map file.
 - The `num_agent` parameter can be changed to either 1 or 2 for single or two agent racing.
