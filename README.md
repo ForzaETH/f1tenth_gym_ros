@@ -119,6 +119,8 @@ In **single** agent:
 
 `/map`: The map of the environment
 
+`/sim/state/ego`: `std_msgs/Float64MultiArray`, the ego's single-track state as the gym integrates it: `[x, y, steer_angle, vel, yaw_angle, yaw_rate, slip_angle]` (m, m, rad, m/s, rad, rad/s, rad). Unlike the odometry it holds the steering angle and the slip angle.
+
 `/sim/collision/walls`: `std_msgs/UInt8MultiArray`, one flag per agent (`[ego]` or `[ego, opp]`), 1 while the car touches the environment. The gym stops a car on wall contact, so the flag stays set while it stands.
 
 A `tf` tree is also maintained.
@@ -137,7 +139,9 @@ In addition to the topics available in the single agent scenario, these topics a
 
 `/sim/collision/cars`: `std_msgs/Bool`, true while the bodies of the two cars overlap. The gym does not stop the cars on contact.
 
-Both collision topics are published once per physics step (every 10 ms).
+`/sim/state/opp`: `std_msgs/Float64MultiArray`, the opponent's single-track state, same layout as `/sim/state/ego`.
+
+The collision and state topics are published once per physics step (every 10 ms).
 
 # Topics subscribed by the simulation
 
