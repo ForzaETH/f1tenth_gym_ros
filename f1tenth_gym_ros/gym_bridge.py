@@ -37,7 +37,7 @@ from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Transform
 from ackermann_msgs.msg import AckermannDriveStamped
-from std_msgs.msg import Bool, UInt8MultiArray
+from std_msgs.msg import Bool, Empty, UInt8MultiArray
 from f110_msgs.msg import WpntArray
 from stack_master.qos import LATCHED_QOS
 from tf2_ros import TransformBroadcaster
@@ -112,6 +112,10 @@ class GymBridge(Node):
 
         self.set_descriptor(name='kb_teleop', descriptor=ParameterDescriptor(
             type=ParameterType.PARAMETER_BOOL, description="Whether teleop is enabled"))
+
+        # start gate: hold the physics until /sim/start arrives, so all stacks can come up before t=0
+        self.start_gate = self.get_parameter('start_gate').value if self.has_parameter('start_gate') else False
+        self.started = not self.start_gate
 
         # check num_agents
         num_agents = self.get_parameter('num_agent').value
@@ -259,12 +263,21 @@ class GymBridge(Node):
                 self.opp_reset_callback,
                 10)
 
+        if self.start_gate:
+            self.start_sub = self.create_subscription(Empty, '/sim/start', self.start_callback, 10)
+            self.get_logger().info("Start gate active, waiting for /sim/start")
+
         if self.get_parameter('kb_teleop').value:
             self.teleop_sub = self.create_subscription(
                 Twist,
                 '/cmd_vel',
                 self.teleop_callback,
                 10)
+
+    def start_callback(self, _):
+        if not self.started:
+            self.started = True
+            self.get_logger().info("Start gate opened")
 
     def drive_callback(self, drive_msg):
         self.ego_requested_speed = drive_msg.drive.speed
@@ -336,11 +349,13 @@ class GymBridge(Node):
             self.ego_steer = 0.0
 
     def drive_timer_callback(self):
-        if self.ego_drive_published and not self.has_opp:
+        # physics stays frozen until the start gate opens (topics keep publishing the spawn state)
+        step = self.started and self.ego_drive_published
+        if step and not self.has_opp:
             self.obs, _, self.done, _ = self.env.step(
                 np.array([[self.ego_steer, self.ego_requested_speed]]))
         # opp keeps its 0, 0 default command until it publishes, so the ego is simulated anyway
-        elif self.ego_drive_published and self.has_opp:
+        elif step and self.has_opp:
             self.obs, _, self.done, _ = self.env.step(np.array(
                 [[self.ego_steer, self.ego_requested_speed], [self.opp_steer, self.opp_requested_speed]]))
         self.ts = self.get_clock().now().to_msg()
