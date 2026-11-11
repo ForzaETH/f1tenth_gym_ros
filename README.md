@@ -106,6 +106,7 @@ For more infor check the [node](./f1tenth_gym_ros/sim_audio.py).
 - The map can be changed via the `map_path` parameter. You'll have to use the full path to the map file in the container. The map follows the ROS convention. It is assumed that the image file and the `yaml` file for the map are in the same directory with the same name. See the note below about mounting a volume to see where to put your map file.
 - The `num_agent` parameter can be changed to either 1 or 2 for single or two agent racing.
 - The ego and opponent starting pose can also be changed via parameters, these are in the global map coordinate frame.
+- The optional `start_gate` parameter (default `False`) holds the physics until a message arrives on `/sim/start`, so that every node can come up before the cars move. Until then all topics keep publishing the spawn state.
 
 The entire directory of the repo is mounted to a workspace `/sim_ws/src` as a package. All changes made in the repo on the host system will also reflect in the container. After changing the configuration, run `colcon build` again in the container workspace to make sure the changes are reflected.
 
@@ -156,6 +157,10 @@ In addition to all topics in the single agent scenario, these topics are also av
 `/opp_drive`: The opponent agent's drive command via `AckermannDriveStamped` messages. Note that you'll need to publish to **both** the ego's drive topic and the opponent's drive topic for the cars to move when using 2 agents.
 
 `/goal_pose`: This is the topic for resetting the opponent agent's pose via RViz's 2D Goal Pose tool. Do **NOT** publish directly to this topic unless you know what you're doing.
+
+With `start_gate` set:
+
+`/sim/start`: `std_msgs/Empty`, the first message starts the physics. Later messages are ignored.
 
 # Keyboard Teleop
 
