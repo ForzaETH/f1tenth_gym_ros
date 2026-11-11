@@ -296,11 +296,13 @@ class GymBridge(Node):
         if self.spawned_on_raceline or not wpnts_msg.wpnts:
             return
         self.spawned_on_raceline = True  # only once, later raceline updates must not teleport the car
-        w = wpnts_msg.wpnts[0]
+        track_length = wpnts_msg.wpnts[-1].s_m
+        ego_s = (self.get_parameter('ego_spawn_s').value if self.has_parameter('ego_spawn_s') else 0.0) % track_length
+        w = min(wpnts_msg.wpnts, key=lambda p: abs(p.s_m - ego_s))
         if self.has_opp:
             # opponent on the raceline too, opp_spawn_s [m] ahead of the ego (sx1/sy1/stheta1 are only the fallback)
-            opp_s = (self.get_parameter('opp_spawn_s').value if self.has_parameter('opp_spawn_s') else 5.0) \
-                % wpnts_msg.wpnts[-1].s_m
+            opp_s = (ego_s + (self.get_parameter('opp_spawn_s').value if self.has_parameter('opp_spawn_s') else 5.0)) \
+                % track_length
             o = min(wpnts_msg.wpnts, key=lambda p: abs(p.s_m - opp_s))
             self.obs, _, self.done, _ = self.env.reset(
                 poses=np.array([[w.x_m, w.y_m, w.psi_rad], [o.x_m, o.y_m, o.psi_rad]]))
@@ -308,7 +310,7 @@ class GymBridge(Node):
         else:
             self.obs, _, self.done, _ = self.env.reset(
                 poses=np.array([[w.x_m, w.y_m, w.psi_rad]]))
-        self.get_logger().info(f"Spawned ego on raceline s=0: x={w.x_m:.2f} y={w.y_m:.2f} yaw={w.psi_rad:.2f}")
+        self.get_logger().info(f"Spawned ego on raceline s={w.s_m:.2f}: x={w.x_m:.2f} y={w.y_m:.2f} yaw={w.psi_rad:.2f}")
 
     def opp_reset_callback(self, pose_msg):
         if self.has_opp:
