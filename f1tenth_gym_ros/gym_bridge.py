@@ -37,7 +37,7 @@ from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Transform
 from ackermann_msgs.msg import AckermannDriveStamped
-from std_msgs.msg import Bool, UInt8MultiArray
+from std_msgs.msg import Bool, Float64MultiArray, UInt8MultiArray
 from f110_msgs.msg import WpntArray
 from stack_master.qos import LATCHED_QOS
 from tf2_ros import TransformBroadcaster
@@ -212,8 +212,11 @@ class GymBridge(Node):
         self.ego_drive_published = False
         # collision flags of the gym, published once per physics tick
         self.wall_collision_pub = self.create_publisher(UInt8MultiArray, '/sim/collision/walls', 10)
+        # single-track state of each car, published once per physics tick
+        self.ego_state_pub = self.create_publisher(Float64MultiArray, '/sim/state/ego', 10)
         if self.has_opp:
             self.car_collision_pub = self.create_publisher(Bool, '/sim/collision/cars', 10)
+            self.opp_state_pub = self.create_publisher(Float64MultiArray, '/sim/state/opp', 10)
         if num_agents == 2:
             self.opp_scan_pub = self.create_publisher(
                 LaserScan, opp_scan_topic, 10)
@@ -346,6 +349,7 @@ class GymBridge(Node):
         self.ts = self.get_clock().now().to_msg()
         self._update_sim_state()
         self.publish_collisions()
+        self.publish_states()
 
     def publish_collisions(self):
         """
@@ -360,6 +364,17 @@ class GymBridge(Node):
             data=[int(agent.in_collision and not car) for agent, car in zip(sim.agents, cars)]))
         if self.has_opp:
             self.car_collision_pub.publish(Bool(data=bool(cars.any())))
+
+    def publish_states(self):
+        """
+        /sim/state/ego, /sim/state/opp: the gym's single-track state of each car,
+        [x, y, steer_angle, vel, yaw_angle, yaw_rate, slip_angle]. Unlike the odometry it holds the
+        steering angle and the slip angle.
+        """
+        agents = self.env.unwrapped.sim.agents
+        self.ego_state_pub.publish(Float64MultiArray(data=agents[0].state.tolist()))
+        if self.has_opp:
+            self.opp_state_pub.publish(Float64MultiArray(data=agents[1].state.tolist()))
 
     def scan_timer_callback(self):
         # pub scans
