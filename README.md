@@ -106,6 +106,7 @@ For more infor check the [node](./f1tenth_gym_ros/sim_audio.py).
 - The map can be changed via the `map_path` parameter. You'll have to use the full path to the map file in the container. The map follows the ROS convention. It is assumed that the image file and the `yaml` file for the map are in the same directory with the same name. See the note below about mounting a volume to see where to put your map file.
 - The `num_agent` parameter can be changed to either 1 or 2 for single or two agent racing.
 - The ego and opponent starting pose can also be changed via parameters, these are in the global map coordinate frame.
+- Once `/global_waypoints` is available, the cars are moved onto the raceline instead: the ego to `ego_spawn_s` (default `0.0` m) and the opponent `opp_spawn_s` (default `5.0` m) ahead of it, both wrapped around the track length.
 
 The entire directory of the repo is mounted to a workspace `/sim_ws/src` as a package. All changes made in the repo on the host system will also reflect in the container. After changing the configuration, run `colcon build` again in the container workspace to make sure the changes are reflected.
 
