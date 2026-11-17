@@ -106,6 +106,7 @@ For more infor check the [node](./f1tenth_gym_ros/sim_audio.py).
 - The map can be changed via the `map_path` parameter. You'll have to use the full path to the map file in the container. The map follows the ROS convention. It is assumed that the image file and the `yaml` file for the map are in the same directory with the same name. See the note below about mounting a volume to see where to put your map file.
 - The `num_agent` parameter can be changed to either 1 or 2 for single or two agent racing.
 - The ego and opponent starting pose can also be changed via parameters, these are in the global map coordinate frame.
+- Once `/global_waypoints` is available, the cars are moved onto the raceline instead: the ego to `ego_spawn_s` (default `0.0` m) and the opponent `opp_spawn_s` (default `5.0` m) ahead of it, both wrapped around the track length.
 - The optional `start_gate` parameter (default `False`) holds the physics until a message arrives on `/sim/start`, so that every node can come up before the cars move. Until then all topics keep publishing the spawn state.
 
 The entire directory of the repo is mounted to a workspace `/sim_ws/src` as a package. All changes made in the repo on the host system will also reflect in the container. After changing the configuration, run `colcon build` again in the container workspace to make sure the changes are reflected.
@@ -119,6 +120,8 @@ In **single** agent:
 `/ego_racecar/odom`: The ego agent's odometry
 
 `/map`: The map of the environment
+
+`/sim/state/ego`: `std_msgs/Float64MultiArray`, the ego's single-track state as the gym integrates it: `[x, y, steer_angle, vel, yaw_angle, yaw_rate, slip_angle]` (m, m, rad, m/s, rad, rad/s, rad). Unlike the odometry it holds the steering angle and the slip angle.
 
 `/sim/collision/walls`: `std_msgs/UInt8MultiArray`, one flag per agent (`[ego]` or `[ego, opp]`), 1 while the car touches the environment. The gym stops a car on wall contact, so the flag stays set while it stands.
 
@@ -138,7 +141,9 @@ In addition to the topics available in the single agent scenario, these topics a
 
 `/sim/collision/cars`: `std_msgs/Bool`, true while the bodies of the two cars overlap. The gym does not stop the cars on contact.
 
-Both collision topics are published once per physics step (every 10 ms).
+`/sim/state/opp`: `std_msgs/Float64MultiArray`, the opponent's single-track state, same layout as `/sim/state/ego`.
+
+The collision and state topics are published once per physics step (every 10 ms).
 
 # Topics subscribed by the simulation
 

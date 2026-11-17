@@ -37,7 +37,7 @@ from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Transform
 from ackermann_msgs.msg import AckermannDriveStamped
-from std_msgs.msg import Bool, Empty, UInt8MultiArray
+from std_msgs.msg import Bool, Empty, Float64MultiArray, UInt8MultiArray
 from f110_msgs.msg import WpntArray
 from stack_master.qos import LATCHED_QOS
 from tf2_ros import TransformBroadcaster
@@ -216,8 +216,11 @@ class GymBridge(Node):
         self.ego_drive_published = False
         # collision flags of the gym, published once per physics tick
         self.wall_collision_pub = self.create_publisher(UInt8MultiArray, '/sim/collision/walls', 10)
+        # single-track state of each car, published once per physics tick
+        self.ego_state_pub = self.create_publisher(Float64MultiArray, '/sim/state/ego', 10)
         if self.has_opp:
             self.car_collision_pub = self.create_publisher(Bool, '/sim/collision/cars', 10)
+            self.opp_state_pub = self.create_publisher(Float64MultiArray, '/sim/state/opp', 10)
         if num_agents == 2:
             self.opp_scan_pub = self.create_publisher(
                 LaserScan, opp_scan_topic, 10)
@@ -309,11 +312,13 @@ class GymBridge(Node):
         if self.spawned_on_raceline or not wpnts_msg.wpnts:
             return
         self.spawned_on_raceline = True  # only once, later raceline updates must not teleport the car
-        w = wpnts_msg.wpnts[0]
+        track_length = wpnts_msg.wpnts[-1].s_m
+        ego_s = (self.get_parameter('ego_spawn_s').value if self.has_parameter('ego_spawn_s') else 0.0) % track_length
+        w = min(wpnts_msg.wpnts, key=lambda p: abs(p.s_m - ego_s))
         if self.has_opp:
             # opponent on the raceline too, opp_spawn_s [m] ahead of the ego (sx1/sy1/stheta1 are only the fallback)
-            opp_s = (self.get_parameter('opp_spawn_s').value if self.has_parameter('opp_spawn_s') else 5.0) \
-                % wpnts_msg.wpnts[-1].s_m
+            opp_s = (ego_s + (self.get_parameter('opp_spawn_s').value if self.has_parameter('opp_spawn_s') else 5.0)) \
+                % track_length
             o = min(wpnts_msg.wpnts, key=lambda p: abs(p.s_m - opp_s))
             self.obs, _, self.done, _ = self.env.reset(
                 poses=np.array([[w.x_m, w.y_m, w.psi_rad], [o.x_m, o.y_m, o.psi_rad]]))
@@ -321,7 +326,7 @@ class GymBridge(Node):
         else:
             self.obs, _, self.done, _ = self.env.reset(
                 poses=np.array([[w.x_m, w.y_m, w.psi_rad]]))
-        self.get_logger().info(f"Spawned ego on raceline s=0: x={w.x_m:.2f} y={w.y_m:.2f} yaw={w.psi_rad:.2f}")
+        self.get_logger().info(f"Spawned ego on raceline s={w.s_m:.2f}: x={w.x_m:.2f} y={w.y_m:.2f} yaw={w.psi_rad:.2f}")
 
     def opp_reset_callback(self, pose_msg):
         if self.has_opp:
@@ -361,6 +366,7 @@ class GymBridge(Node):
         self.ts = self.get_clock().now().to_msg()
         self._update_sim_state()
         self.publish_collisions()
+        self.publish_states()
 
     def publish_collisions(self):
         """
@@ -375,6 +381,17 @@ class GymBridge(Node):
             data=[int(agent.in_collision and not car) for agent, car in zip(sim.agents, cars)]))
         if self.has_opp:
             self.car_collision_pub.publish(Bool(data=bool(cars.any())))
+
+    def publish_states(self):
+        """
+        /sim/state/ego, /sim/state/opp: the gym's single-track state of each car,
+        [x, y, steer_angle, vel, yaw_angle, yaw_rate, slip_angle]. Unlike the odometry it holds the
+        steering angle and the slip angle.
+        """
+        agents = self.env.unwrapped.sim.agents
+        self.ego_state_pub.publish(Float64MultiArray(data=agents[0].state.tolist()))
+        if self.has_opp:
+            self.opp_state_pub.publish(Float64MultiArray(data=agents[1].state.tolist()))
 
     def scan_timer_callback(self):
         # pub scans
