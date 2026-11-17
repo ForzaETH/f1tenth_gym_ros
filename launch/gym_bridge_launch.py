@@ -86,6 +86,9 @@ def generate_launch_description():
     rviz = LaunchConfiguration('rviz')
     rviz_arg = DeclareLaunchArgument(
         'rviz', default_value='true', description="RViz")
+    sim_overrides_arg = DeclareLaunchArgument(
+        'sim_overrides', default_value='',
+        description="Optional YAML (bridge: ros__parameters: ...) applied on top of stack_master/config/SIM/sim.yaml")
 
     sim_setup_params = os.path.join(
         get_package_share_directory('stack_master'),
@@ -93,18 +96,25 @@ def generate_launch_description():
         'SIM',
         'sim.yaml')
 
-    config_dict = yaml.safe_load(open(sim_setup_params, 'r'))
-    has_opp = config_dict['bridge']['ros__parameters']['num_agent'] > 1
+    def bridge_setup(context):
+        # the overrides are only known at launch time, and num_agent decides whether the opp model is published
+        overrides = LaunchConfiguration('sim_overrides').perform(context)
+        params = yaml.safe_load(open(sim_setup_params, 'r'))['bridge']['ros__parameters']
+        param_files = [sim_setup_params]
+        if overrides:
+            params.update(yaml.safe_load(open(overrides, 'r'))['bridge']['ros__parameters'])
+            param_files.append(overrides)
+        bridge_node = Node(
+            package='f1tenth_gym_ros',
+            executable='gym_bridge',
+            name='bridge',
+            parameters=param_files + [
+                {'map_path': map_yaml_path},
+                {'sim_params': car_sim_params(LaunchConfiguration('racecar_version').perform(context),
+                                              LaunchConfiguration('floor').perform(context))}]
+        )
+        return [bridge_node, opp_robot_publisher] if params['num_agent'] > 1 else [bridge_node]
 
-    bridge_node = OpaqueFunction(function=lambda context: [Node(
-        package='f1tenth_gym_ros',
-        executable='gym_bridge',
-        name='bridge',
-        parameters=[sim_setup_params,
-                    {'map_path': map_yaml_path},
-                    {'sim_params': car_sim_params(LaunchConfiguration('racecar_version').perform(context),
-                                                  LaunchConfiguration('floor').perform(context))}]
-    )])
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -173,14 +183,13 @@ def generate_launch_description():
     ld.add_action(racecar_version_arg)
     ld.add_action(floor_arg)
     ld.add_action(rviz_arg)
+    ld.add_action(sim_overrides_arg)
     ld.add_action(rviz_node)
     ld.add_action(rviz_glsl_note)
-    ld.add_action(bridge_node)
+    ld.add_action(OpaqueFunction(function=bridge_setup))
     ld.add_action(nav_lifecycle_node)
     ld.add_action(map_server_node)
     ld.add_action(map_to_odom_broadcaster)
     ld.add_action(ego_robot_publisher)
-    if has_opp:
-        ld.add_action(opp_robot_publisher)
 
     return ld
